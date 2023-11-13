@@ -1,5 +1,4 @@
 import sys
-from PyQt5 import QtWidgets, QtCore
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QGraphicsView, QGraphicsScene, QAction, QFileDialog, QGraphicsItem,
@@ -8,8 +7,6 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtGui import QPixmap, QPen, QColor, QPainter, QPainterPath
 from PyQt5.QtCore import Qt, QPointF, QRectF, QSizeF, pyqtSignal
 from enum import Enum
-
-from rectangle import MyWidget
 
 class AnnotationType(Enum):
     NONE = 0
@@ -116,6 +113,7 @@ class AnnotationView(QGraphicsView):
             self.annotation_items.remove(item)
 
     def draw_square(self, start_point, end_point):
+
         top_left = QPointF(min(start_point.x(), end_point.x()), min(start_point.y(), end_point.y()))
         side_length = max(abs(end_point.x() - start_point.x()), abs(end_point.y() - start_point.y()))
         side_length = max(side_length, 20)
@@ -139,35 +137,17 @@ class AnnotationView(QGraphicsView):
         self.annotation_items.append(annotation_item)  
         return annotation_item
 
-    # def draw_rectangle(self, start_point, end_point):
-    #     width = abs(end_point.x() - start_point.x())
-    #     height = abs(end_point.y() - start_point.y())
-    #     width = max(width, 2)
-    #     height = max(height, 2)
-    #     path = QPainterPath()
-    #     top_left = QPointF(min(start_point.x(), end_point.x()), min(start_point.y(), end_point.y()))
-    #     rect = QRectF(top_left, QSizeF(width, height))
-    #     pen = QPen(self.annotation_color)
-    #     pen.setWidth(2)
-    #     annotation_item = AnnotationItem(path.addRect(rect), pen)
-    #     self.annotation_items.append(annotation_item)  
-    #     return annotation_item
-
     def draw_rectangle(self, start_point, end_point):
         width = abs(end_point.x() - start_point.x())
         height = abs(end_point.y() - start_point.y())
         width = max(width, 2)
         height = max(height, 2)
-
-        path = QPainterPath()
         top_left = QPointF(min(start_point.x(), end_point.x()), min(start_point.y(), end_point.y()))
         rect = QRectF(top_left, QSizeF(width, height))
-
-        path.addRect(rect)
         pen = QPen(self.annotation_color)
         pen.setWidth(2)
-        annotation_item = AnnotationItem(path, pen)
-        self.annotation_items.append(annotation_item)
+        annotation_item = AnnotationItem(QPainterPath().addRect(rect), pen)
+        self.annotation_items.append(annotation_item)  
         return annotation_item
 
     def draw_triangle(self, start_point, end_point):
@@ -317,7 +297,7 @@ class AnnotationMainWindow(QMainWindow):
         self.annotation_color = QColor("red")
         self.annotation_items = []
 
-        logo_pixmap = QPixmap("/Users/sriyajammula/Medical-Image-Analysis-GUI/BooleanLab copy.jpeg")
+        logo_pixmap = QPixmap("/Users/maana/Documents/Annotation/BooleanLab copy.jpeg")
         logo_pixmap = logo_pixmap.scaledToWidth(80)
         self.logo_label = QLabel()
         self.logo_label.setPixmap(logo_pixmap)
@@ -397,9 +377,6 @@ class AnnotationMainWindow(QMainWindow):
             last_item = self.annotation_items.pop()  # Remove and get the last annotation item
             self.scene().removeItem(last_item)  # Remove it from the scene
 
-
-
-
     def zoom_in(self):
         self.annotation_view.scale(1.2, 1.2)
 
@@ -431,7 +408,7 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = AnnotationMainWindow()
 
-    image_path = "/Users/sriyajammula/Medical-Image-Analysis-GUI/cancertissue  copy.png"
+    image_path = "/Users/maana/Documents/Annotation/cancertissue  copy.png"
     window.set_image(image_path)
     window.show()
 
