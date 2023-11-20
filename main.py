@@ -3,13 +3,11 @@ from PyQt5 import QtWidgets, QtCore
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QGraphicsView, QGraphicsScene, QAction, QFileDialog, QGraphicsItem,
-    QButtonGroup, QRadioButton, QGraphicsPixmapItem, QGridLayout, QSizePolicy
+    QButtonGroup, QRadioButton, QGraphicsPixmapItem, QGridLayout, QSizePolicy, QMenu
 )
 from PyQt5.QtGui import QPixmap, QPen, QColor, QPainter, QPainterPath
 from PyQt5.QtCore import Qt, QPointF, QRectF, QSizeF, pyqtSignal
 from enum import Enum
-
-from rectangle import MyWidget
 
 class AnnotationType(Enum):
     NONE = 0
@@ -48,7 +46,7 @@ class AnnotationView(QGraphicsView):
         self.annotation_type = AnnotationType.NONE
         self.annotation_color = QColor("red")
         self.annotation_items = []
-
+        self.drawn_paths = []
         # Keep track of the current annotation item being drawn
         self.current_item = None
         self.current_path = None
@@ -100,6 +98,7 @@ class AnnotationView(QGraphicsView):
                     AnnotationType.TRIANGLE: self.draw_triangle,
                     AnnotationType.ELLIPSE: self.draw_ellipse
                 }
+                self.drawn_paths.append(self.current_item.path)  # Corrected: append path attribute
                 self.current_item = shape_draw_functions[self.annotation_type](self.start_point, end_point)
                 if self.current_item:
                     self.scene().addItem(self.current_item)
@@ -194,10 +193,12 @@ class AnnotationView(QGraphicsView):
 class AnnotationMainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-
+        self.annotation_items = []
+        self.drawn_paths = [] 
         self.setWindowTitle("Cancer Tissue Annotation")
-
+        
         self.darker_blue = "#6495ED"
+        self.teal = "#2760C6"
 
         self.central_widget = QWidget(self)
         self.setCentralWidget(self.central_widget)
@@ -208,14 +209,13 @@ class AnnotationMainWindow(QMainWindow):
 
         self.annotation_view = AnnotationView(self)
         self.layout.addWidget(self.annotation_view, 1, 0, 1, 1)
-
         self.is_fullscreen = False
 
-        self.initial_zoom_factor = 0.5
+        self.initial_zoom_factor = 0.45
 
         self.scene = QGraphicsScene(self)
         self.annotation_view.setScene(self.scene)
-
+        
         self.image_label = QLabel()
         self.image_label.setStyleSheet("background-color: black;")
 
@@ -223,95 +223,197 @@ class AnnotationMainWindow(QMainWindow):
         self.header_layout = QVBoxLayout(self.header_container)
 
         self.header_label = QLabel("Cancer Tissue Annotation")
-        self.header_label.setStyleSheet(
-            f"background-color: {self.darker_blue}; color: white; font-size: 50px;"
-        )
+        self.header_label.setStyleSheet("""
+            background-color: #2760C6;
+            color: white;
+            font-size: 50px;
+            font-family: 'Arial', Times, serif;
+            font-weight: bold;
+            padding: 10px;
+            border-radius: 10px;
+            text-align: center;
+        """)
         self.header_label.setAlignment(Qt.AlignCenter)
 
         self.header_layout.addWidget(self.header_label)
-        
-        self.layout.addWidget(self.header_container, 0, 0, 1, 1)
+
+        self.layout.addWidget(self.header_container, 0, 0, 1, 2)
 
         self.scene.addWidget(self.image_label)
 
         self.header_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
         self.tool_layout = QVBoxLayout()
-        self.layout.addLayout(self.tool_layout, 0, 1, 1, 1)
+        self.layout.addLayout(self.tool_layout, 1, 1, 1, 1)
 
         self.layout.setAlignment(Qt.AlignTop)
 
-        self.button_layout = QHBoxLayout()  
+        button_height = 50
+        button_width = 250
+
+        self.annotation_options_label = QLabel("? Options")
+        self.annotation_options_label.setStyleSheet(
+            "font-family: 'Times New Roman', serif;"  
+            "font-size: 20px;"  
+            "color: #2760C6;"  
+            "background-color: #E8E8E8;"  
+            "border: 2px solid #6495ED;"  
+            "border-radius: 5px;"  
+            "padding: 10px;"  
+        )
+        self.annotation_options_label.setAlignment(Qt.AlignCenter)
+        self.tool_layout.addWidget(self.annotation_options_label) 
+        self.annotation_options_label.setFixedHeight(button_height)
+        self.annotation_options_label.setFixedWidth(button_width)
+        self.button_layout = QVBoxLayout()  
 
         self.fullscreen_button = QPushButton("Fullscreen")
-        self.fullscreen_button.setStyleSheet(f"background-color: {self.darker_blue}; color: white;")
+        self.fullscreen_button.setStyleSheet(f"background-color: {self.teal}; color: white;")
         self.button_layout.addWidget(self.fullscreen_button)
+        self.fullscreen_button.setFixedHeight(button_height)
+        self.fullscreen_button.setFixedWidth(button_width)
 
         self.zoom_in_button = QPushButton("Zoom In")
-        self.zoom_in_button.setStyleSheet(f"background-color: {self.darker_blue}; color: white;")
+        self.zoom_in_button.setStyleSheet(f"background-color: {self.teal}; color: white;")
         self.button_layout.addWidget(self.zoom_in_button)
+        self.zoom_in_button.setFixedHeight(button_height)
+        self.zoom_in_button.setFixedWidth(button_width)
 
         self.zoom_out_button = QPushButton("Zoom Out")
-        self.zoom_out_button.setStyleSheet(f"background-color: {self.darker_blue}; color: white;")
+        self.zoom_out_button.setStyleSheet(f"background-color: {self.teal}; color: white;")
         self.button_layout.addWidget(self.zoom_out_button)
+        self.zoom_out_button.setFixedHeight(button_height)
+        self.zoom_out_button.setFixedWidth(button_width)
 
         self.download_button = QPushButton("Download")
-        self.download_button.setStyleSheet(f"background-color: {self.darker_blue}; color: white;")
+        self.download_button.setStyleSheet(f"background-color: {self.teal}; color: white;")
         self.button_layout.addWidget(self.download_button)
+        self.download_button.setFixedHeight(button_height)
+        self.download_button.setFixedWidth(button_width)
+
+        self.clear_button = QPushButton("Clear")
+        self.clear_button.setStyleSheet(f"background-color: {self.teal}; color: white;")
+        self.button_layout.addWidget(self.clear_button)
+        self.clear_button.setFixedHeight(button_height)
+        self.clear_button.setFixedWidth(button_width)
+
 
         self.tool_layout.addLayout(self.button_layout)
 
         self.annotation_button_group = QButtonGroup(self)
 
-        self.annotation_button_layout = QHBoxLayout() 
+        self.annotation_button_layout = QVBoxLayout() 
+        
+        #Annotation options heading
+        self.annotation_options_label = QLabel("Annotation Options")
+        self.annotation_options_label.setStyleSheet(
+            "font-family: 'Times New Roman', serif;"  
+            "font-size: 20px;"  
+            "color: #2760C6;"  
+            "background-color: #E8E8E8;"  
+            "border: 2px solid #6495ED;"  
+            "border-radius: 5px;"  
+            "padding: 10px;"  
+        )
+        self.annotation_options_label.setAlignment(Qt.AlignCenter)
+        self.tool_layout.addWidget(self.annotation_options_label) 
+        self.annotation_options_label.setFixedHeight(button_height)
+        self.annotation_options_label.setFixedWidth(button_width)
 
         self.freehand_button = QRadioButton("Freehand")
-        self.freehand_button.setStyleSheet(f"background-color: {self.darker_blue}; color: white;")
-        self.annotation_button_group.addButton(self.freehand_button)
+        self.freehand_button.setStyleSheet(f"background-color: {self.teal}; color: white;")
         self.annotation_button_layout.addWidget(self.freehand_button)
+        #self.annotation_button_group.addButton(self.freehand_button)
+        self.freehand_button.setFixedHeight(button_height)
+        self.freehand_button.setFixedWidth(button_width)
 
         self.square_button = QRadioButton("Square")
-        self.square_button.setStyleSheet(f"background-color: {self.darker_blue}; color: white;")
-        self.annotation_button_group.addButton(self.square_button)
+        self.square_button.setStyleSheet(f"background-color: {self.teal}; color: white;")
+        #self.annotation_button_group.addButton(self.square_button)
         self.annotation_button_layout.addWidget(self.square_button)
+        self.square_button.setFixedHeight(button_height)
+        self.square_button.setFixedWidth(button_width)
 
         self.circle_button = QRadioButton("Circle")
-        self.circle_button.setStyleSheet(f"background-color: {self.darker_blue}; color: white;")
-        self.annotation_button_group.addButton(self.circle_button)
+        self.circle_button.setStyleSheet(f"background-color: {self.teal}; color: white;")
+        #self.annotation_button_group.addButton(self.circle_button)
         self.annotation_button_layout.addWidget(self.circle_button)
+        self.circle_button.setFixedHeight(button_height)
+        self.circle_button.setFixedWidth(button_width)
 
         self.rectangle_button = QRadioButton("Rectangle")
-        self.rectangle_button.setStyleSheet(f"background-color: {self.darker_blue}; color: white;")
-        self.annotation_button_group.addButton(self.rectangle_button)
+        self.rectangle_button.setStyleSheet(f"background-color: {self.teal}; color: white;")
+        #self.annotation_button_group.addButton(self.rectangle_button)
         self.annotation_button_layout.addWidget(self.rectangle_button)
+        self.rectangle_button.setFixedHeight(button_height)
+        self.rectangle_button.setFixedWidth(button_width)
 
         self.triangle_button = QRadioButton("Triangle")
-        self.triangle_button.setStyleSheet(f"background-color: {self.darker_blue}; color: white;")
-        self.annotation_button_group.addButton(self.triangle_button)
+        self.triangle_button.setStyleSheet(f"background-color: {self.teal}; color: white;")
+        #self.annotation_button_group.addButton(self.triangle_button)
         self.annotation_button_layout.addWidget(self.triangle_button)
+        self.triangle_button.setFixedHeight(button_height)
+        self.triangle_button.setFixedWidth(button_width)
 
         self.ellipse_button = QRadioButton("Ellipse")
-        self.ellipse_button.setStyleSheet(f"background-color: {self.darker_blue}; color: white;")
-        self.annotation_button_group.addButton(self.ellipse_button)
+        self.ellipse_button.setStyleSheet(f"background-color: {self.teal}; color: white;")
+        #self.annotation_button_group.addButton(self.ellipse_button)
         self.annotation_button_layout.addWidget(self.ellipse_button)
+        self.ellipse_button.setFixedHeight(button_height)
+        self.ellipse_button.setFixedWidth(button_width)
 
-        self.clear_button = QPushButton("Clear")
-        self.clear_button.setStyleSheet(f"background-color: {self.darker_blue}; color: white;")
-        self.tool_layout.addWidget(self.clear_button)
-
-        self.undo_button = QPushButton("Undo")
-        self.undo_button.setStyleSheet(f"background-color: {self.darker_blue}; color: white;")
-        self.tool_layout.addWidget(self.undo_button)
-        
-
+        # self.undo_button = QPushButton("Undo")
+        # self.undo_button.setStyleSheet(f"background-color: {self.darker_blue}; color: white;")
+        # self.tool_layout.addWidget(self.undo_button)
+        # self.tool_layout.addLayout(self.annotation_button_group)
         self.tool_layout.addLayout(self.annotation_button_layout)
+
+        button_style = (
+            f"QPushButton {{"
+            f"background-color: {self.teal};"
+            f"color: white;"
+            f"border: 1px solid white;"
+            f"border-radius: 5px;"
+            f"padding: 10px;"
+            f"}}"
+            f"QPushButton:hover {{"
+            f"background-color: #E8E8E8;"
+            f"color: {self.teal};"
+            f"}}"
+            f"QRadioButton {{"
+            f"background-color: {self.teal};"
+            f"color: white;"
+            f"border: 1px solid white;"
+            f"border-radius: 5px;"
+            f"padding: 10px;"
+            f"}}"
+            f"QRadioButton:hover {{"
+            f"background-color: #E8E8E8;"
+            f"color: {self.teal};"
+            f"}}"
+        )
+        annotation_buttons = [
+            self.fullscreen_button,
+            self.zoom_in_button,
+            self.zoom_out_button,
+            self.download_button,
+            self.clear_button,
+            self.freehand_button,
+            self.square_button,
+            self.circle_button,
+            self.rectangle_button,
+            self.triangle_button,
+            self.ellipse_button,
+        ]
+        for button in annotation_buttons:
+            button.setStyleSheet(button_style)
 
         self.annotation_type = AnnotationType.NONE
         self.annotation_color = QColor("red")
         self.annotation_items = []
 
         logo_pixmap = QPixmap("/Users/sriyajammula/Medical-Image-Analysis-GUI/BooleanLab copy.jpeg")
-        logo_pixmap = logo_pixmap.scaledToWidth(80)
+        logo_pixmap = logo_pixmap.scaledToWidth(100)
         self.logo_label = QLabel()
         self.logo_label.setPixmap(logo_pixmap)
         self.alignment_widget = QWidget(self)
@@ -352,7 +454,8 @@ class AnnotationMainWindow(QMainWindow):
         self.zoom_out_button.clicked.connect(self.zoom_out)
         self.download_button.clicked.connect(self.download_image)
         self.fullscreen_button.clicked.connect(self.toggle_fullscreen)
-        self.undo_button.clicked.connect(self.undo_annotation)
+        self.clear_button.clicked.connect(self.clear_annotations)
+        #self.undo_button.clicked.connect(self.undo_annotation)
 
         self.freehand_button.clicked.connect(lambda: self.annotation_view.set_annotation_type(AnnotationType.FREEHAND))
         self.square_button.clicked.connect(lambda: self.annotation_view.set_annotation_type(AnnotationType.SQUARE))
@@ -361,8 +464,6 @@ class AnnotationMainWindow(QMainWindow):
         self.triangle_button.clicked.connect(lambda: self.annotation_view.set_annotation_type(AnnotationType.TRIANGLE))
         self.ellipse_button.clicked.connect(lambda: self.annotation_view.set_annotation_type(AnnotationType.ELLIPSE))
 
-        self.clear_button.clicked.connect(self.clear_annotations)
-
     def set_image(self, image_path):
         pixmap = QPixmap(image_path)
         self.original_image_path = image_path
@@ -370,8 +471,6 @@ class AnnotationMainWindow(QMainWindow):
         self.scene.setSceneRect(0, 0, pixmap.width(), pixmap.height())
         self.annotation_view.resetTransform()
         self.annotation_view.scale(self.initial_zoom_factor, self.initial_zoom_factor)
-
-
 
     def clear_annotations(self):
 
@@ -384,10 +483,17 @@ class AnnotationMainWindow(QMainWindow):
             self.annotation_view.setScene(image_scene)
 
     def undo_annotation(self):
-        if self.annotation_items:
-            last_item = self.annotation_items.pop()  # Remove and get the last annotation item
-            self.scene().removeItem(last_item)  # Remove it from the scene
-
+        if self.drawn_paths:
+            # Clear the scene
+            self.scene().clear()
+            # Redraw the stored paths except the last one
+            for path in self.drawn_paths[:-1]:
+                pen = QPen(self.annotation_color)
+                pen.setWidth(2)
+                annotation_item = AnnotationItem(path, pen)
+                self.scene().addItem(annotation_item)
+            # Remove the last drawn path
+            self.drawn_paths.pop()
 
     def zoom_in(self):
         self.annotation_view.scale(1.2, 1.2)
