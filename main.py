@@ -9,6 +9,14 @@ from PyQt5.QtGui import QPixmap, QPen, QColor, QPainter, QPainterPath
 from PyQt5.QtCore import Qt, QPointF, QRectF, QSizeF, pyqtSignal
 from enum import Enum
 
+import cv2
+import numpy as np
+from PyQt5.QtWidgets import QApplication, QWidget, QGridLayout, QLabel, QPushButton
+from PyQt5.QtGui import QPixmap, QImage
+from PyQt5 import QtWidgets
+from PyQt5 import *
+from PyQt5.QtCore import Qt 
+
 class AnnotationType(Enum):
     NONE = 0
     FREEHAND = 1
@@ -188,14 +196,35 @@ class AnnotationView(QGraphicsView):
         annotation_item = AnnotationItem(path, pen)
         self.annotation_items.append(annotation_item)  # Add the annotation item to the list
         return annotation_item
+    
+# def histogramNormalization(image):
+#     # Convert the image to grayscale
+#     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
+#     # Calculate the histogram of the grayscale image
+#     hist = cv2.calcHist([gray], [0], None, [256], [0, 256])
+
+#     # Calculate the cumulative histogram
+#     cdf = hist.cumsum()
+
+#     # Normalize the cumulative histogram
+#     cdf_normalized = cdf / cdf.max()
+
+#     # Map the normalized cumulative histogram to the range [0, 255]
+#     lookUpTable = np.uint8(np.round(cdf_normalized * 255))
+
+#     # Apply the look-up table to the grayscale image
+#     normalizedImage = cv2.LUT(gray, lookUpTable)
+
+#     return normalizedImage
 
 class AnnotationMainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.annotation_items = []
         self.drawn_paths = [] 
-        self.setWindowTitle("Cancer Tissue Annotation")
+        self.setWindowTitle("Medical Image Annotation")
+        
         
         self.darker_blue = "#6495ED"
         self.teal = "#2760C6"
@@ -219,10 +248,18 @@ class AnnotationMainWindow(QMainWindow):
         self.image_label = QLabel()
         self.image_label.setStyleSheet("background-color: black;")
 
+###
+        # self.cvImage = None
+        # self.qtImage = None
+
+        # self.imageLabel = QLabel()
+        # self.normalizedImageLabel = QLabel()
+
+###
         self.header_container = QWidget()
         self.header_layout = QVBoxLayout(self.header_container)
 
-        self.header_label = QLabel("Cancer Tissue Annotation")
+        self.header_label = QLabel("Medical Image Annotation")
         self.header_label.setStyleSheet("""
             background-color: #2760C6;
             color: white;
@@ -240,18 +277,23 @@ class AnnotationMainWindow(QMainWindow):
         self.layout.addWidget(self.header_container, 0, 0, 1, 2)
 
         self.scene.addWidget(self.image_label)
+        # self.scene.addWidget(self.normalizedImageLabel)
 
         self.header_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
         self.tool_layout = QVBoxLayout()
         self.layout.addLayout(self.tool_layout, 1, 1, 1, 1)
 
+        self.normalized_image_label = QLabel()
+        self.normalized_image_label.setStyleSheet("background-color: black;")
+        self.layout.addWidget(self.normalized_image_label, 2, 0, 1, 1)  # Adjust the layout as needed
+
         self.layout.setAlignment(Qt.AlignTop)
 
         button_height = 50
         button_width = 250
 
-        self.annotation_options_label = QLabel("? Options")
+        self.annotation_options_label = QLabel("Features")
         self.annotation_options_label.setStyleSheet(
             "font-family: 'Times New Roman', serif;"  
             "font-size: 20px;"  
@@ -296,6 +338,12 @@ class AnnotationMainWindow(QMainWindow):
         self.button_layout.addWidget(self.clear_button)
         self.clear_button.setFixedHeight(button_height)
         self.clear_button.setFixedWidth(button_width)
+
+        self.hist_button = QPushButton("Histogram Eq")
+        self.hist_button.setStyleSheet(f"background-color: {self.teal}; color: white;")
+        self.button_layout.addWidget(self.hist_button)
+        self.hist_button.setFixedHeight(button_height)
+        self.hist_button.setFixedWidth(button_width)
 
 
         self.tool_layout.addLayout(self.button_layout)
@@ -398,6 +446,7 @@ class AnnotationMainWindow(QMainWindow):
             self.zoom_out_button,
             self.download_button,
             self.clear_button,
+            self.hist_button,
             self.freehand_button,
             self.square_button,
             self.circle_button,
@@ -412,7 +461,7 @@ class AnnotationMainWindow(QMainWindow):
         self.annotation_color = QColor("red")
         self.annotation_items = []
 
-        logo_pixmap = QPixmap("/Users/sriyajammula/Medical-Image-Analysis-GUI/BooleanLab copy.jpeg")
+        logo_pixmap = QPixmap("/Volumes/LENOVO_USB_/Project/Medical-Image-Analysis-GUI/BooleanLab copy.jpeg")
         logo_pixmap = logo_pixmap.scaledToWidth(100)
         self.logo_label = QLabel()
         self.logo_label.setPixmap(logo_pixmap)
@@ -455,6 +504,8 @@ class AnnotationMainWindow(QMainWindow):
         self.download_button.clicked.connect(self.download_image)
         self.fullscreen_button.clicked.connect(self.toggle_fullscreen)
         self.clear_button.clicked.connect(self.clear_annotations)
+        self.hist_button.clicked.connect(self.on_hist_button_clicked)
+
         #self.undo_button.clicked.connect(self.undo_annotation)
 
         self.freehand_button.clicked.connect(lambda: self.annotation_view.set_annotation_type(AnnotationType.FREEHAND))
@@ -464,6 +515,21 @@ class AnnotationMainWindow(QMainWindow):
         self.triangle_button.clicked.connect(lambda: self.annotation_view.set_annotation_type(AnnotationType.TRIANGLE))
         self.ellipse_button.clicked.connect(lambda: self.annotation_view.set_annotation_type(AnnotationType.ELLIPSE))
 
+    # def set_image(self, cvImage, qtImage):
+    #     pixmap = QPixmap(qtImage)
+    #     self.original_image_path = qtImage
+    #     self.image_label.setPixmap(pixmap)
+    #     self.scene.setSceneRect(0, 0, pixmap.width(), pixmap.height())
+    #     self.annotation_view.resetTransform()
+    #     self.annotation_view.scale(self.initial_zoom_factor, self.initial_zoom_factor)
+    #     self.cvImage = cvImage
+    #     self.qtImage = qtImage
+
+    #     pixmap = QPixmap.fromImage(qtImage)
+    #     scaledPixmap = pixmap.scaled(self.width(), self.height(), Qt.KeepAspectRatio)
+    #     self.imageLabel.setPixmap(scaledPixmap)
+    #     self.scene.clear()
+    #     self.scene.addWidget(self.image_label)
     def set_image(self, image_path):
         pixmap = QPixmap(image_path)
         self.original_image_path = image_path
@@ -471,6 +537,11 @@ class AnnotationMainWindow(QMainWindow):
         self.scene.setSceneRect(0, 0, pixmap.width(), pixmap.height())
         self.annotation_view.resetTransform()
         self.annotation_view.scale(self.initial_zoom_factor, self.initial_zoom_factor)
+        
+      
+
+       
+        
 
     def clear_annotations(self):
 
@@ -521,12 +592,59 @@ class AnnotationMainWindow(QMainWindow):
             pixmap.save(file_name, "PNG")
             print(f"Image with annotations saved as {file_name}")
 
+
+
+
+    # def normalizeImage(self):
+    #     normalizedImage = histogramNormalization(self.cvImage)
+
+    #     # Convert the normalized image to the correct format
+    #     height, width = normalizedImage.shape
+    #     bytesPerLine = 1 * width
+    #     qImg = QImage(normalizedImage.data, width, height, bytesPerLine, QImage.Format_Grayscale8)
+
+    #     # Scale the QPixmap and set it to the label
+    #     pixmap = QPixmap.fromImage(qImg)
+    #     scaledPixmap = pixmap.scaled(self.width(), self.height(), Qt.KeepAspectRatio)
+    #     self.normalizedImageLabel.setPixmap(scaledPixmap)
+    #     normalized_label_proxy = self.scene.addWidget(self.normalizedImageLabel)
+    #     normalized_label_proxy.setPos(0, pixmap.height())
+
+    # def displayImages(self):
+    #     self.set_image(self.original_image_path)
+
+    #     # Normalize and show normalized image
+    #     self.normalizeImage()
+
+    def normalize_histogram(self, image_path):
+        # Read the image
+        img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+
+        # Perform histogram equalization
+        normalized_img = cv2.equalizeHist(img)
+
+        # Convert back to QPixmap
+        height, width = normalized_img.shape
+        bytes_per_line = width
+        q_img = QImage(normalized_img.data, width, height, bytes_per_line, QImage.Format_Grayscale8)
+        pixmap = QPixmap.fromImage(q_img)
+        
+        return pixmap
+    
+    def on_hist_button_clicked(self):
+        if self.original_image_path:
+            normalized_pixmap = self.normalize_histogram(self.original_image_path)
+            self.normalized_image_label.setPixmap(normalized_pixmap)
     
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = AnnotationMainWindow()
 
-    image_path = "/Users/maana/Documents/GitHub/Medical-Image-Analysis-GUI/images/Sample_GUI.png"
+    image_path = "/Volumes/LENOVO_USB_/Project/Medical-Image-Analysis-GUI/test2.png"
+    # image1 = cv2.imread('/Volumes/LENOVO_USB_/Project/Medical-Image-Analysis-GUI/test2.png')
+    # image2 = QImage('/Volumes/LENOVO_USB_/Project/Medical-Image-Analysis-GUI/test2.png')
+
+    # window.set_image(image1, image2)
     window.set_image(image_path)
     window.show()
 
