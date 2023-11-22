@@ -526,7 +526,7 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = AnnotationMainWindow()
 
-    image_path = "/Users/sriyajammula/Medical-Image-Analysis-GUI/cancertissue  copy.png"
+    image_path = "/Users/maana/Documents/GitHub/Medical-Image-Analysis-GUI/images/Sample_GUI.png"
     window.set_image(image_path)
     window.show()
 
