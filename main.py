@@ -1,21 +1,15 @@
 import sys
+import cv2
+
 from PyQt5 import QtWidgets, QtCore
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QGraphicsView, QGraphicsScene, QAction, QFileDialog, QGraphicsItem,
-    QButtonGroup, QRadioButton, QGraphicsPixmapItem, QGridLayout, QSizePolicy, QMenu
+    QButtonGroup, QRadioButton, QGraphicsPixmapItem, QGridLayout, QSizePolicy, QMenu, 
 )
-from PyQt5.QtGui import QPixmap, QPen, QColor, QPainter, QPainterPath
+from PyQt5.QtGui import QPixmap, QPen, QColor, QPainter, QPainterPath, QImage
 from PyQt5.QtCore import Qt, QPointF, QRectF, QSizeF, pyqtSignal
 from enum import Enum
-
-import cv2
-import numpy as np
-from PyQt5.QtWidgets import QApplication, QWidget, QGridLayout, QLabel, QPushButton
-from PyQt5.QtGui import QPixmap, QImage
-from PyQt5 import QtWidgets
-from PyQt5 import *
-from PyQt5.QtCore import Qt 
 
 class AnnotationType(Enum):
     NONE = 0
@@ -46,8 +40,6 @@ class AnnotationItem(QGraphicsItem):
             self.scene().removeItem(self)
             self.removed.emit(self)
 
-
-
 class AnnotationView(QGraphicsView):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -55,10 +47,17 @@ class AnnotationView(QGraphicsView):
         self.annotation_color = QColor("red")
         self.annotation_items = []
         self.drawn_paths = []
-        # Keep track of the current annotation item being drawn
         self.current_item = None
         self.current_path = None
         self.setBackgroundBrush(Qt.black)
+        self.panning = False
+        self.last_mouse_position = QPointF()
+        self.grabGesture(Qt.PinchGesture)
+
+        self.setRenderHint(QPainter.Antialiasing, True)
+        self.setRenderHint(QPainter.SmoothPixmapTransform, True)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
 
     def set_annotation_type(self, annotation_type):
         self.annotation_type = annotation_type
@@ -90,7 +89,7 @@ class AnnotationView(QGraphicsView):
                     AnnotationType.ELLIPSE: self.draw_ellipse
                 }
                 if self.current_item:
-                    self.scene().removeItem(self.current_item)  # Remove the previous item
+                    self.scene().removeItem(self.current_item) 
                 self.current_item = shape_draw_functions[self.annotation_type](self.start_point, end_point)
                 if self.current_item:
                     self.scene().addItem(self.current_item)
@@ -106,17 +105,35 @@ class AnnotationView(QGraphicsView):
                     AnnotationType.TRIANGLE: self.draw_triangle,
                     AnnotationType.ELLIPSE: self.draw_ellipse
                 }
-                self.drawn_paths.append(self.current_item.path)  # Corrected: append path attribute
+                self.drawn_paths.append(self.current_item.path)  
                 self.current_item = shape_draw_functions[self.annotation_type](self.start_point, end_point)
                 if self.current_item:
                     self.scene().addItem(self.current_item)
 
             delattr(self, 'start_point')  
             self.current_path = None 
-            self.current_item = None  # Reset the current item
+            self.current_item = None 
 
         super().mouseReleaseEvent(event)
 
+    def event(self, event):
+        if event.type() == QtCore.QEvent.Gesture:
+            return self.gestureEvent(event)
+        return super().event(event)
+
+    def gestureEvent(self, event):
+        pinch = event.gesture(Qt.PinchGesture)
+        if pinch:
+            self.handlePinch(pinch)
+        return True
+
+    def handlePinch(self, gesture):
+        changeFlags = gesture.changeFlags()
+        if changeFlags & QtWidgets.QPinchGesture.ScaleFactorChanged:
+            scaleFactor = gesture.scaleFactor()
+            scaleFactor = max(min(scaleFactor, 2.0), 0.5)
+            self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
+            self.scale(scaleFactor, scaleFactor)
 
     def remove_annotation_item(self, item):
         if item in self.annotation_items:
@@ -130,7 +147,7 @@ class AnnotationView(QGraphicsView):
         path = QPainterPath()
         rect = QRectF(top_left, QSizeF(side_length, side_length))
 
-        path.addRect(rect)  # Add the square to the path
+        path.addRect(rect)  
         pen = QPen(self.annotation_color)
         pen.setWidth(2)
         annotation_item = AnnotationItem(path, pen)
@@ -189,45 +206,26 @@ class AnnotationView(QGraphicsView):
         rect = QRectF(top_left, QSizeF(width, height))
 
         path = QPainterPath()
-        path.addEllipse(rect)  # Add the ellipse to the path
+        path.addEllipse(rect) 
 
         pen = QPen(self.annotation_color)
         pen.setWidth(2)
         annotation_item = AnnotationItem(path, pen)
-        self.annotation_items.append(annotation_item)  # Add the annotation item to the list
+        self.annotation_items.append(annotation_item) 
         return annotation_item
-    
-# def histogramNormalization(image):
-#     # Convert the image to grayscale
-#     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-#     # Calculate the histogram of the grayscale image
-#     hist = cv2.calcHist([gray], [0], None, [256], [0, 256])
-
-#     # Calculate the cumulative histogram
-#     cdf = hist.cumsum()
-
-#     # Normalize the cumulative histogram
-#     cdf_normalized = cdf / cdf.max()
-
-#     # Map the normalized cumulative histogram to the range [0, 255]
-#     lookUpTable = np.uint8(np.round(cdf_normalized * 255))
-
-#     # Apply the look-up table to the grayscale image
-#     normalizedImage = cv2.LUT(gray, lookUpTable)
-
-#     return normalizedImage
 
 class AnnotationMainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.annotation_items = []
         self.drawn_paths = [] 
-        self.setWindowTitle("Medical Image Annotation")
+        self.setWindowTitle("Cancer Tissue Annotation")
         
-        
-        self.darker_blue = "#6495ED"
-        self.teal = "#2760C6"
+        self.teal = "#254783"
+        self.lightgrey = "#CFD9F5"
+        self.darkgrey = "#E8E8E8"
+        self.black = "#02040A"
 
         self.central_widget = QWidget(self)
         self.setCentralWidget(self.central_widget)
@@ -240,7 +238,7 @@ class AnnotationMainWindow(QMainWindow):
         self.layout.addWidget(self.annotation_view, 1, 0, 1, 1)
         self.is_fullscreen = False
 
-        self.initial_zoom_factor = 0.45
+        self.initial_zoom_factor = 0.35
 
         self.scene = QGraphicsScene(self)
         self.annotation_view.setScene(self.scene)
@@ -248,28 +246,20 @@ class AnnotationMainWindow(QMainWindow):
         self.image_label = QLabel()
         self.image_label.setStyleSheet("background-color: black;")
 
-###
-        # self.cvImage = None
-        # self.qtImage = None
-
-        # self.imageLabel = QLabel()
-        # self.normalizedImageLabel = QLabel()
-
-###
         self.header_container = QWidget()
         self.header_layout = QVBoxLayout(self.header_container)
 
-        self.header_label = QLabel("Medical Image Annotation")
-        self.header_label.setStyleSheet("""
-            background-color: #2760C6;
-            color: white;
-            font-size: 50px;
-            font-family: 'Arial', Times, serif;
-            font-weight: bold;
-            padding: 10px;
-            border-radius: 10px;
-            text-align: center;
-        """)
+        self.header_label = QLabel("Cancer Tissue Annotation")
+        self.header_label.setStyleSheet(
+            f"background-color: {self.teal};"
+            "color: white;"
+            "font-size: 50px;"
+            "font-family: 'Arial', Times, serif;"
+            "font-weight: bold;"
+            "padding: 10px;"
+            "border-radius: 10px;"
+            "text-align: center;"
+        )
         self.header_label.setAlignment(Qt.AlignCenter)
 
         self.header_layout.addWidget(self.header_label)
@@ -277,29 +267,29 @@ class AnnotationMainWindow(QMainWindow):
         self.layout.addWidget(self.header_container, 0, 0, 1, 2)
 
         self.scene.addWidget(self.image_label)
-        # self.scene.addWidget(self.normalizedImageLabel)
 
         self.header_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
         self.tool_layout = QVBoxLayout()
         self.layout.addLayout(self.tool_layout, 1, 1, 1, 1)
 
-        self.normalized_image_label = QLabel()
-        self.normalized_image_label.setStyleSheet("background-color: black;")
-        self.layout.addWidget(self.normalized_image_label, 2, 0, 1, 1)  # Adjust the layout as needed
+        self.normalized_image_view = QGraphicsView()
+        self.normalized_image_view.setStyleSheet("background-color: black;")
+        self.normalized_image_scene = QGraphicsScene(self)
+        self.normalized_image_view.setScene(self.normalized_image_scene)
 
         self.layout.setAlignment(Qt.AlignTop)
 
         button_height = 50
         button_width = 250
 
-        self.annotation_options_label = QLabel("Features")
+        self.annotation_options_label = QLabel("Image Options")
         self.annotation_options_label.setStyleSheet(
             "font-family: 'Times New Roman', serif;"  
             "font-size: 20px;"  
-            "color: #2760C6;"  
-            "background-color: #E8E8E8;"  
-            "border: 2px solid #6495ED;"  
+            f"color: {self.teal};"  
+            f"background-color: {self.lightgrey};"  
+            f"border: 2px solid {self.black};"  
             "border-radius: 5px;"  
             "padding: 10px;"  
         )
@@ -333,17 +323,14 @@ class AnnotationMainWindow(QMainWindow):
         self.download_button.setFixedHeight(button_height)
         self.download_button.setFixedWidth(button_width)
 
-        self.clear_button = QPushButton("Clear")
-        self.clear_button.setStyleSheet(f"background-color: {self.teal}; color: white;")
-        self.button_layout.addWidget(self.clear_button)
-        self.clear_button.setFixedHeight(button_height)
-        self.clear_button.setFixedWidth(button_width)
 
-        self.hist_button = QPushButton("Histogram Eq")
-        self.hist_button.setStyleSheet(f"background-color: {self.teal}; color: white;")
-        self.button_layout.addWidget(self.hist_button)
-        self.hist_button.setFixedHeight(button_height)
-        self.hist_button.setFixedWidth(button_width)
+        self.reset_button = QPushButton("Reset Image")
+        self.reset_button.setStyleSheet(f"background-color: {self.teal}; color: white;")
+        self.button_layout.addWidget(self.reset_button)
+        self.reset_button.setFixedHeight(button_height)
+        self.reset_button.setFixedWidth(button_width)
+
+        self.original_pixmap = None
 
 
         self.tool_layout.addLayout(self.button_layout)
@@ -357,9 +344,9 @@ class AnnotationMainWindow(QMainWindow):
         self.annotation_options_label.setStyleSheet(
             "font-family: 'Times New Roman', serif;"  
             "font-size: 20px;"  
-            "color: #2760C6;"  
-            "background-color: #E8E8E8;"  
-            "border: 2px solid #6495ED;"  
+            f"color: {self.teal};"  
+            f"background-color: {self.lightgrey};"  
+            "border: 2px solid #02040A;"  
             "border-radius: 5px;"  
             "padding: 10px;"  
         )
@@ -371,75 +358,82 @@ class AnnotationMainWindow(QMainWindow):
         self.freehand_button = QRadioButton("Freehand")
         self.freehand_button.setStyleSheet(f"background-color: {self.teal}; color: white;")
         self.annotation_button_layout.addWidget(self.freehand_button)
-        #self.annotation_button_group.addButton(self.freehand_button)
         self.freehand_button.setFixedHeight(button_height)
         self.freehand_button.setFixedWidth(button_width)
 
         self.square_button = QRadioButton("Square")
         self.square_button.setStyleSheet(f"background-color: {self.teal}; color: white;")
-        #self.annotation_button_group.addButton(self.square_button)
         self.annotation_button_layout.addWidget(self.square_button)
         self.square_button.setFixedHeight(button_height)
         self.square_button.setFixedWidth(button_width)
 
         self.circle_button = QRadioButton("Circle")
         self.circle_button.setStyleSheet(f"background-color: {self.teal}; color: white;")
-        #self.annotation_button_group.addButton(self.circle_button)
         self.annotation_button_layout.addWidget(self.circle_button)
         self.circle_button.setFixedHeight(button_height)
         self.circle_button.setFixedWidth(button_width)
 
         self.rectangle_button = QRadioButton("Rectangle")
         self.rectangle_button.setStyleSheet(f"background-color: {self.teal}; color: white;")
-        #self.annotation_button_group.addButton(self.rectangle_button)
         self.annotation_button_layout.addWidget(self.rectangle_button)
         self.rectangle_button.setFixedHeight(button_height)
         self.rectangle_button.setFixedWidth(button_width)
 
         self.triangle_button = QRadioButton("Triangle")
         self.triangle_button.setStyleSheet(f"background-color: {self.teal}; color: white;")
-        #self.annotation_button_group.addButton(self.triangle_button)
         self.annotation_button_layout.addWidget(self.triangle_button)
         self.triangle_button.setFixedHeight(button_height)
         self.triangle_button.setFixedWidth(button_width)
 
         self.ellipse_button = QRadioButton("Ellipse")
         self.ellipse_button.setStyleSheet(f"background-color: {self.teal}; color: white;")
-        #self.annotation_button_group.addButton(self.ellipse_button)
         self.annotation_button_layout.addWidget(self.ellipse_button)
         self.ellipse_button.setFixedHeight(button_height)
         self.ellipse_button.setFixedWidth(button_width)
+       
+        self.hist_button = QPushButton("Histogram Eq")
+        self.hist_button.setStyleSheet(f"background-color: {self.teal}; color: white;")
+        self.button_layout.addWidget(self.hist_button)
+        self.hist_button.setFixedHeight(button_height)
+        self.hist_button.setFixedWidth(button_width)
 
-        # self.undo_button = QPushButton("Undo")
-        # self.undo_button.setStyleSheet(f"background-color: {self.darker_blue}; color: white;")
-        # self.tool_layout.addWidget(self.undo_button)
-        # self.tool_layout.addLayout(self.annotation_button_group)
+        self.clear_button = QPushButton("Clear")
+        self.clear_button.setStyleSheet(f"background-color: {self.teal}; color: white;")
+        self.button_layout.addWidget(self.clear_button)
+        self.clear_button.setFixedHeight(button_height)
+        self.clear_button.setFixedWidth(button_width)
+
         self.tool_layout.addLayout(self.annotation_button_layout)
 
         button_style = (
-            f"QPushButton {{"
-            f"background-color: {self.teal};"
-            f"color: white;"
-            f"border: 1px solid white;"
-            f"border-radius: 5px;"
-            f"padding: 10px;"
-            f"}}"
-            f"QPushButton:hover {{"
-            f"background-color: #E8E8E8;"
-            f"color: {self.teal};"
-            f"}}"
-            f"QRadioButton {{"
-            f"background-color: {self.teal};"
-            f"color: white;"
-            f"border: 1px solid white;"
-            f"border-radius: 5px;"
-            f"padding: 10px;"
-            f"}}"
-            f"QRadioButton:hover {{"
-            f"background-color: #E8E8E8;"
-            f"color: {self.teal};"
-            f"}}"
-        )
+        f"QPushButton {{"
+        f"background-color: {self.teal};"
+        f"color: white;"  
+        f"border: 1px solid white;"
+        f"border-radius: 5px;"
+        f"padding: 10px;"
+        f"}}"
+        f"QPushButton:hover {{"
+        f"background-color: {self.lightgrey};"
+        f"color: {self.teal};"
+        f"}}"
+        f"QRadioButton {{"
+        f"background-color: {self.teal};"
+        f"color: white;"  
+        f"border: 1px solid white;"
+        f"border-radius: 5px;"
+        f"padding: 10px;"
+        f"}}"
+        f"QRadioButton:hover {{"
+        f"background-color: {self.lightgrey};"
+        f"color: {self.teal};"
+        f"}}"
+        f"QToolTip {{"
+        f"background-color: white;"  
+        f"color: black;" 
+        f"}}"
+    )
+
         annotation_buttons = [
             self.fullscreen_button,
             self.zoom_in_button,
@@ -447,6 +441,7 @@ class AnnotationMainWindow(QMainWindow):
             self.download_button,
             self.clear_button,
             self.hist_button,
+            self.reset_button,
             self.freehand_button,
             self.square_button,
             self.circle_button,
@@ -457,11 +452,26 @@ class AnnotationMainWindow(QMainWindow):
         for button in annotation_buttons:
             button.setStyleSheet(button_style)
 
+
+        self.fullscreen_button.setToolTip("Toggle fullscreen mode")
+        self.zoom_in_button.setToolTip("Zoom in on the image")
+        self.zoom_out_button.setToolTip("Zoom out on the image")
+        self.download_button.setToolTip("Download the annotated image")
+        self.clear_button.setToolTip("Clear all annotations")
+        self.hist_button.setToolTip("Apply histogram equalization (grayscale the image)")
+        self.reset_button.setToolTip("Restore the original colored image")
+        self.freehand_button.setToolTip("Draw annotations freehand")
+        self.square_button.setToolTip("Draw square annotations")
+        self.circle_button.setToolTip("Draw circular annotations")
+        self.rectangle_button.setToolTip("Draw rectangular annotations")
+        self.triangle_button.setToolTip("Draw triangular annotations")
+        self.ellipse_button.setToolTip("Draw elliptical annotations")
+
         self.annotation_type = AnnotationType.NONE
         self.annotation_color = QColor("red")
         self.annotation_items = []
 
-        logo_pixmap = QPixmap("/Volumes/LENOVO_USB_/Project/Medical-Image-Analysis-GUI/BooleanLab copy.jpeg")
+        logo_pixmap = QPixmap("/Users/maana/Downloads/Medical-Image-Analysis-GUI/BooleanLab copy.jpeg")
         logo_pixmap = logo_pixmap.scaledToWidth(100)
         self.logo_label = QLabel()
         self.logo_label.setPixmap(logo_pixmap)
@@ -504,9 +514,8 @@ class AnnotationMainWindow(QMainWindow):
         self.download_button.clicked.connect(self.download_image)
         self.fullscreen_button.clicked.connect(self.toggle_fullscreen)
         self.clear_button.clicked.connect(self.clear_annotations)
-        self.hist_button.clicked.connect(self.on_hist_button_clicked)
-
-        #self.undo_button.clicked.connect(self.undo_annotation)
+        self.hist_button.clicked.connect(self.apply_histogram_equalization)
+        self.reset_button.clicked.connect(self.reset_image)
 
         self.freehand_button.clicked.connect(lambda: self.annotation_view.set_annotation_type(AnnotationType.FREEHAND))
         self.square_button.clicked.connect(lambda: self.annotation_view.set_annotation_type(AnnotationType.SQUARE))
@@ -515,62 +524,33 @@ class AnnotationMainWindow(QMainWindow):
         self.triangle_button.clicked.connect(lambda: self.annotation_view.set_annotation_type(AnnotationType.TRIANGLE))
         self.ellipse_button.clicked.connect(lambda: self.annotation_view.set_annotation_type(AnnotationType.ELLIPSE))
 
-    # def set_image(self, cvImage, qtImage):
-    #     pixmap = QPixmap(qtImage)
-    #     self.original_image_path = qtImage
-    #     self.image_label.setPixmap(pixmap)
-    #     self.scene.setSceneRect(0, 0, pixmap.width(), pixmap.height())
-    #     self.annotation_view.resetTransform()
-    #     self.annotation_view.scale(self.initial_zoom_factor, self.initial_zoom_factor)
-    #     self.cvImage = cvImage
-    #     self.qtImage = qtImage
-
-    #     pixmap = QPixmap.fromImage(qtImage)
-    #     scaledPixmap = pixmap.scaled(self.width(), self.height(), Qt.KeepAspectRatio)
-    #     self.imageLabel.setPixmap(scaledPixmap)
-    #     self.scene.clear()
-    #     self.scene.addWidget(self.image_label)
     def set_image(self, image_path):
         pixmap = QPixmap(image_path)
         self.original_image_path = image_path
+        self.original_pixmap = pixmap
         self.image_label.setPixmap(pixmap)
         self.scene.setSceneRect(0, 0, pixmap.width(), pixmap.height())
         self.annotation_view.resetTransform()
         self.annotation_view.scale(self.initial_zoom_factor, self.initial_zoom_factor)
-        
-      
-
-       
-        
 
     def clear_annotations(self):
 
-            image_pixmap = self.image_label.pixmap()
-            image_scene = QGraphicsScene(self)
-            image_scene.setSceneRect(0, 0, image_pixmap.width(), image_pixmap.height())
-            image_item = QGraphicsPixmapItem(image_pixmap)
-            image_scene.addItem(image_item)
+        image_pixmap = self.image_label.pixmap()
+        image_scene = QGraphicsScene(self)
+        image_scene.setSceneRect(0, 0, image_pixmap.width(), image_pixmap.height())
+        image_item = QGraphicsPixmapItem(image_pixmap)
+        image_scene.addItem(image_item)
 
-            self.annotation_view.setScene(image_scene)
-
-    def undo_annotation(self):
-        if self.drawn_paths:
-            # Clear the scene
-            self.scene().clear()
-            # Redraw the stored paths except the last one
-            for path in self.drawn_paths[:-1]:
-                pen = QPen(self.annotation_color)
-                pen.setWidth(2)
-                annotation_item = AnnotationItem(path, pen)
-                self.scene().addItem(annotation_item)
-            # Remove the last drawn path
-            self.drawn_paths.pop()
+        self.annotation_view.setScene(image_scene)
 
     def zoom_in(self):
         self.annotation_view.scale(1.2, 1.2)
 
     def zoom_out(self):
         self.annotation_view.scale(0.8, 0.8)
+
+    def clear_annotation_items(self):
+        self.annotation_items.clear()
 
     def download_image(self):
         options = QFileDialog.Options()
@@ -593,58 +573,38 @@ class AnnotationMainWindow(QMainWindow):
             print(f"Image with annotations saved as {file_name}")
 
 
-
-
-    # def normalizeImage(self):
-    #     normalizedImage = histogramNormalization(self.cvImage)
-
-    #     # Convert the normalized image to the correct format
-    #     height, width = normalizedImage.shape
-    #     bytesPerLine = 1 * width
-    #     qImg = QImage(normalizedImage.data, width, height, bytesPerLine, QImage.Format_Grayscale8)
-
-    #     # Scale the QPixmap and set it to the label
-    #     pixmap = QPixmap.fromImage(qImg)
-    #     scaledPixmap = pixmap.scaled(self.width(), self.height(), Qt.KeepAspectRatio)
-    #     self.normalizedImageLabel.setPixmap(scaledPixmap)
-    #     normalized_label_proxy = self.scene.addWidget(self.normalizedImageLabel)
-    #     normalized_label_proxy.setPos(0, pixmap.height())
-
-    # def displayImages(self):
-    #     self.set_image(self.original_image_path)
-
-    #     # Normalize and show normalized image
-    #     self.normalizeImage()
-
-    def normalize_histogram(self, image_path):
-        # Read the image
-        img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
-
-        # Perform histogram equalization
-        normalized_img = cv2.equalizeHist(img)
-
-        # Convert back to QPixmap
-        height, width = normalized_img.shape
-        bytes_per_line = width
-        q_img = QImage(normalized_img.data, width, height, bytes_per_line, QImage.Format_Grayscale8)
-        pixmap = QPixmap.fromImage(q_img)
-        
-        return pixmap
-    
-    def on_hist_button_clicked(self):
+    def apply_histogram_equalization(self):
         if self.original_image_path:
-            normalized_pixmap = self.normalize_histogram(self.original_image_path)
-            self.normalized_image_label.setPixmap(normalized_pixmap)
-    
+            original_image = cv2.imread(self.original_image_path, cv2.IMREAD_GRAYSCALE)
+            if original_image is None:
+                print(f"Failed to load the image from {self.original_image_path}")
+                return
+
+            equalized_image = cv2.equalizeHist(original_image)
+            height, width = equalized_image.shape
+            bytes_per_line = width
+            q_image = QImage(equalized_image.data, width, height, bytes_per_line, QImage.Format_Grayscale8)
+
+            pixmap = QPixmap.fromImage(q_image)
+
+            self.image_label.setPixmap(pixmap) 
+            self.scene.setSceneRect(0, 0, pixmap.width(), pixmap.height())
+            self.annotation_view.resetTransform()
+            self.annotation_view.scale(self.initial_zoom_factor, self.initial_zoom_factor)
+
+    def reset_image(self):
+        if self.original_pixmap:
+            self.image_label.setPixmap(self.original_pixmap)
+            self.scene.setSceneRect(0, 0, self.original_pixmap.width(), self.original_pixmap.height())
+            self.annotation_view.resetTransform()
+            self.annotation_view.scale(self.initial_zoom_factor, self.initial_zoom_factor)
+
+
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = AnnotationMainWindow()
 
-    image_path = "/Volumes/LENOVO_USB_/Project/Medical-Image-Analysis-GUI/test2.png"
-    # image1 = cv2.imread('/Volumes/LENOVO_USB_/Project/Medical-Image-Analysis-GUI/test2.png')
-    # image2 = QImage('/Volumes/LENOVO_USB_/Project/Medical-Image-Analysis-GUI/test2.png')
-
-    # window.set_image(image1, image2)
+    image_path = "/Users/maana/Downloads/Medical-Image-Analysis-GUI/MicrosoftTeams-image.png"
     window.set_image(image_path)
     window.show()
 
